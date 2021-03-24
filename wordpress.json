@@ -1,0 +1,50 @@
+{
+    "version": "5.3.6",
+    "name": "Batchworks staging",
+    "locale": "en_US",
+    "database": {
+        "host": "localhost",
+        "user": "root",
+        "password": "",
+        "name": "batchworks",
+        "source": "database\/database.sql"
+    },
+    "plugins": {
+        "Akismet Anti-Spam": {
+            "url": "akismet",
+            "active": "false",
+            "version": "4.1.2",
+            "wp_version": "",
+            "php_version": ""
+        },
+        "Hello Dolly": {
+            "url": "hello-dolly",
+            "active": "false",
+            "version": "1.7.2",
+            "wp_version": "",
+            "php_version": ""
+        }
+    },
+    "themes": {
+        "Twenty Nineteen": {
+            "url": "twentynineteen",
+            "active": "true",
+            "version": "1.4"
+        },
+        "Twenty Seventeen": {
+            "url": "twentyseventeen",
+            "active": "false",
+            "version": "2.2"
+        },
+        "Twenty Sixteen": {
+            "url": "twentysixteen",
+            "active": "false",
+            "version": "2.0"
+        },
+        "Twenty Twenty": {
+            "url": "twentytwenty",
+            "active": "false",
+            "version": "1.1"
+        }
+    }
+}
