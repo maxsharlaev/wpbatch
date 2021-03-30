@@ -167,7 +167,7 @@ class WPBatch
      */
     private function adminDefine()
     {
-        if (!self::$config['admin']) {
+        if (empty(self::$config['admin'])) {
             self::$config['admin'] = [];
         }
         self::$config['admin']['login'] = self::$args['admin_login'] ?? (self::$config['admin']['login'] ?? 'webadmin');
@@ -200,13 +200,49 @@ class WPBatch
         $this->jsonRead();
         $this->databaseCredentialsDefine();
         $this->adminDefine();
-        $this->databaseCreate();
+        $this->databaseRestore();
         $this->wpDownload();
         $this->wpConfigCreate();
         $this->wpInstall();
+        $this->wpConnect();
         $this->domainChange();
         $this->themesInstall();
         $this->pluginsInstall();
+    }
+
+    /**
+     * Restores database from source sql file
+     */
+    private function databaseRestore()
+    {
+        $serverName = self::$config['database']['host'];
+        $userName = self::$config['database']['user'];
+        $password = self::$config['database']['password'] ?? '';
+        $dbName = self::$config['database']['name'];
+        $dbSource = self::$config['database']['source'];
+
+        $conn = new mysqli($serverName, $userName, $password);
+        if ($conn->connect_error) {
+            die("Connection failed: " . $conn->connect_error);
+        }
+
+        $sql = 'DROP DATABASE '.$dbName;
+        $conn->query($sql);
+
+        $sql = 'CREATE DATABASE '.$dbName;
+
+        if ($conn->query($sql) === TRUE) {
+            echo "Database created successfully";
+        } else {
+            echo "Error creating database: " . $conn->error;
+        }
+
+        $command = "mysql -u " . $userName . " ";
+        if ($password) {
+            $command .= "-p".$password.' ';
+        }
+        $command .= $dbName . ' < ' . $dbSource;
+        shell_exec($command);
     }
 
     /**
@@ -456,24 +492,28 @@ class WPBatch
      */
     function wpInstall()
     {
-        $command = self::$wpCli . " core install";
-        if (self::$config['domain']) {
-            $command .= ' --url=' . self::$config['domain'];
-        }
-        if (self::$config['name']) {
-            $command .= ' --title=' . self::$config['name'];
-        }
-        if (self::$config['admin']['login']) {
-            $command .= ' --admin_user=' . self::$config['admin']['login'];
-        }
-        if (self::$config['admin']['password']) {
-            $command .= ' --admin_password=' . self::$config['admin']['password'];
-        }
-        if (self::$config['admin']['email']) {
-            $command .= ' --admin_email=' . self::$config['admin']['email'];
-        }
+        $command = self::setWpCliParam('core install', [
+            'url'=>self::$config['domain'],
+            'title' => self::$config['name'],
+            'admin_user' => self::$config['admin']['login'],
+            'admin_password' => self::$config['admin']['password'],
+            'admin_email' => self::$config['admin']['email'],
+
+        ]);
 
         shell_exec($command);
+    }
+
+    private function setWpCliParam($command, $params)
+    {
+        $command = self::$wpCli . " {$command} ";
+        foreach ($params as $key => $param) {
+            if(empty($param)) {
+                continue;
+            }
+            $command .= "--{$key}=\"{$param}\" ";
+        }
+        return $command;
     }
 
     /**
@@ -561,28 +601,13 @@ class WPBatch
         shell_exec($command);
     }
 
-    /**
-     * Restores database from source sql file
-     */
-    private function databaseRestore()
-    {
-        $this->jsonRead();
-        $this->databaseCredentialsDefine();
-        $this->databaseCreate();
 
-        $command = "mysql -u " . self::$config['database']['user'] . " ";
-        if (self::$config['database']['password']) {
-            $command .= "-p".self::$config['database']['password'].' ';
-        }
-        $command .= self::$config['database']['name'] . ' < ' . self::$config['database']['source'];
-        shell_exec($command);
-    }
     private function domainChange() {
         if (!self::$connected) {
             die('WP instance should be connected to change website domain');
         }
-        option_update('siteurl', self::$config['domain']);
-        option_update('home', self::$config['domain']);
+        update_option('siteurl', self::$config['domain']);
+        update_option('home', self::$config['domain']);
     }
 
     /**
