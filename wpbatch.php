@@ -28,11 +28,10 @@ class WPBatch
     const ROUTER = [
         'export' => 'wpExport',
         'default' => 'wpExport',
-        'db_dump' => 'databaseDump',
+        'db_dump' => 'wpDbDump',
         'media_dump' => 'archiveMedia',
         'plugins_dump' => 'archivePlugins',
         'themes_dump' => 'archiveTemplates',
-        'db_restore' => 'databaseRestore',
         'restore' => 'wpRestore',
     ];
 
@@ -94,7 +93,6 @@ class WPBatch
         $this->pathDefine();
         $this->outputDefine();
         $this->inputDefine();
-        $this->domainDefine();
 
     }
 
@@ -117,6 +115,9 @@ class WPBatch
     {
         $path = self::$args['output'] ?? (defined('BASE_PATH') ? BASE_PATH : __DIR__);
         define('OUTPUT_PATH', $path);
+        if (!file_exists(OUTPUT_PATH)) {
+            mkdir(OUTPUT_PATH);
+        }
     }
 
     /**
@@ -210,7 +211,7 @@ class WPBatch
             mkdir(OUTPUT_PATH . "/custom_plugins/");
         }
         $outputDir = $this->getFormatPath(OUTPUT_PATH);
-        $command = "cd {$baseUrl} && zip -r {$outputDir}custom_plugins/{$pluginName}.zip {$path} && cd -";
+        $command = "cd {$baseUrl}{$path} && zip -r {$outputDir}custom_plugins/{$pluginName}.zip . && cd -";
         shell_exec($command);
         return "custom_plugins/{$pluginName}.zip";
     }
@@ -297,6 +298,7 @@ class WPBatch
     {
         echo "Restore procedure launched\r\n";
         $this->jsonRead();
+        $this->domainDefine();
         $this->databaseCredentialsDefine();
         $this->adminDefine();
         $this->databaseCreate();
@@ -339,8 +341,9 @@ class WPBatch
      */
     private function jsonRead($name = '')
     {
-        $name = $name ? $name : (self::$args['input'] ?? self::jsonDefault);
-        self::$config = json_decode(file_get_contents(INPUT_PATH . "/$name"), true);
+        $path = self::$args['input'] ?? INPUT_PATH;
+        $name = $name ? $name : $path.'/wordpress.json';
+        self::$config = json_decode(file_get_contents($name), true);
     }
 
     /**
@@ -378,20 +381,20 @@ class WPBatch
         $password = self::$config['database']['password'] ?? '';
         $dbName = self::$config['database']['name'];
 
-        $conn = new mysqli($serverName, $userName, $password);
-        if ($conn->connect_error) {
-            die("Connection failed: " . $conn->connect_error);
+        $db = new mysqli($serverName, $userName, $password);
+        if ($db->connect_error) {
+            die("Connection failed: " . $db->connect_error);
         }
 
         $sql = 'DROP DATABASE ' . $dbName;
-        $conn->query($sql);
+        $db->query($sql);
 
         $sql = 'CREATE DATABASE ' . $dbName;
 
-        if ($conn->query($sql) === TRUE) {
+        if ($db->query($sql) === TRUE) {
             echo "Database created successfully";
         } else {
-            echo "Error creating database: " . $conn->error;
+            echo "Error creating database: " . $db->error;
             die();
         }
     }
@@ -573,6 +576,13 @@ class WPBatch
         shell_exec($command);
     }
 
+    private function wpDbDump(){
+        echo "Export database dump\r\n";
+        $this->wpConnect();
+        $this->doTheDump();
+        $this->databaseDump();
+    }
+
     /**
      * WordPress export script. Creates package file from WP instance
      * Exports database and media files
@@ -582,6 +592,8 @@ class WPBatch
         echo "Export procedure launched\r\n";
         $this->wpConnect();
         $this->doTheDump();
+        $this->doTheDumpPluginsOrThemes();
+
 
         if (isset(self::$args['-b']) || isset(self::$args['-m']) || isset(self::$args['-t']) || isset(self::$args['-p'])) {
             $this->databaseDump();
@@ -620,10 +632,15 @@ class WPBatch
             'password' => DB_PASSWORD,
             'name' => DB_NAME,
         ];
+    }
+
+    private function doTheDumpPluginsOrThemes()
+    {
         if (!isset(self::$args['-p'])) {
             $this->getPluginsList();
             self::$config['plugins'] = $this->pluginsForDump();
         }
+
         if (!isset(self::$args['-t'])) {
             $this->getThemesList();
             self::$config['themes'] = $this->themesForDump();
@@ -819,6 +836,7 @@ class WPBatch
         echo "Dump procedure launched\r\n";
         $this->wpConnect();
         $this->doTheDump();
+        $this->doTheDumpPluginsOrThemes();
         $this->jsonWrite();
     }
 
