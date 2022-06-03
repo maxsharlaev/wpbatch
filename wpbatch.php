@@ -78,20 +78,25 @@ class WPBatch
     /**
      * WPBatch constructor.
      */
-    function __construct()
+    private function __construct()
     {
         $argsRaw = $_SERVER['argv'];
         self::$script = array_shift($argsRaw);
-        $args = array_map(function ($item) {
-            return explode('=', $item);
-        }, $argsRaw);
-        foreach ($args as $item) {
-            self::$args[$item[0]] = $item[1] ?? '';
-        }
 
+        $args = array_map(function ($item) {
+            $paramsRaw = explode('=', $item);
+            if (count($paramsRaw) === 1) {
+                $paramsRaw[] = null;
+            }
+            [$key, $value] = $paramsRaw;
+            return ['key' => $key, 'value' => $value];
+        }, $argsRaw);
+
+        self::$args = array_column($args, 'value', 'key');
         define('WP_USE_THEMES', false);
         $this->pathDefine();
         $this->outputDefine();
+
         $this->inputDefine();
 
     }
@@ -154,7 +159,7 @@ class WPBatch
     /**
      * Saves plugins list to JSON file
      */
-    function pluginsDump()
+    private function pluginsDump()
     {
         $plugins = $this->pluginsForDump();
         file_put_contents(OUTPUT_PATH . '/plugins.json', json_encode($plugins));
@@ -200,6 +205,10 @@ class WPBatch
         return $this->filterDump($output);
     }
 
+    /**
+     * Creates archive custom plugin
+     * @return string
+     */
     private function archiveCustomPlugin($path)
     {
         $baseUrl = $this->getFormatPath(BASE_PATH);
@@ -216,6 +225,10 @@ class WPBatch
         return "custom_plugins/{$pluginName}.zip";
     }
 
+    /**
+     * Gets format path
+     * @return string
+     */
     private function getFormatPath($path)
     {
         $formatPath = $path;
@@ -253,20 +266,22 @@ class WPBatch
      */
     private function filterDump($output)
     {
-        $outputDump = [];
-        foreach ($output as $item) {
-            $name = $item[0]['name'];
-            unset($item[0]['name']);
-            $outputDump[$name] = $item[0];
-        }
-        return $outputDump;
+        $flattenOutput = array_map(function ($item) {
+            $firstKey = array_key_first($item);
+            $pluginName = $item[$firstKey]['name'];
+            unset($item[$firstKey]['name']);
+            $pluginData = $item[$firstKey];
+            return ['name' => $pluginName, 'data' => $pluginData];
+        }, $output);
+
+        return array_column($flattenOutput, 'data', 'name');
     }
 
     /**
      * Reads plgins list from JSON file
      * @return mixed
      */
-    function readPlugins()
+    private function readPlugins()
     {
         $plugins = json_decode(file_get_contents(OUTPUT_PATH . '/plugins.json'), true);
         return $plugins;
@@ -275,19 +290,16 @@ class WPBatch
     /**
      * Execute a script
      */
-    function exec()
+    public function exec()
     {
-        foreach (self::ROUTER as $route => $func) {
-            if (!isset(self::$args[$route])) {
-                continue;
+        array_map(function ($route, $func) {
+            if (array_key_exists($route, self::$args)) {
+                $this->$func();
             }
-            $this->$func();
-            return;
-        }
+        }, array_keys(self::ROUTER), self::ROUTER);
+
         $func = self::ROUTER['default'];
         $this->$func();
-        return;
-
     }
 
     /**
@@ -374,6 +386,9 @@ class WPBatch
         self::$config['admin']['email'] = self::$args['admin_email'] ?? (self::$config['admin']['email'] ?? 'webadmin@test.com');
     }
 
+    /**
+     * Creates db
+     */
     private function databaseCreate()
     {
         $serverName = self::$config['database']['host'];
@@ -402,7 +417,7 @@ class WPBatch
     /**
      * Downloads WP core according to environment settings
      */
-    function wpDownload()
+    private function wpDownload()
     {
         $command = self::$wpCli . ' core download';
         if (self::$config['version']) {
@@ -418,7 +433,7 @@ class WPBatch
     /**
      * Creates wp-config.php with provided settings
      */
-    function wpConfigCreate()
+    private function wpConfigCreate()
     {
         $command = self::$wpCli . " config create --dbname=" . self::$config['database']['name'] . ' --dbuser=' . self::$config['database']['user'];
         if (self::$config['database']['password']) {
@@ -433,7 +448,7 @@ class WPBatch
     /**
      * Performs WP installation (WP core should be downloaded and wp-config.php file created first)
      */
-    function wpInstall()
+    private function wpInstall()
     {
         $command = self::setWpCliParam('core install', [
             'url' => self::$config['domain'],
@@ -447,16 +462,21 @@ class WPBatch
         shell_exec($command);
     }
 
+    /**
+     * Creates commands string
+     * @return string
+     */
     private function setWpCliParam($command, $params)
     {
         $command = self::$wpCli . " {$command} ";
-        foreach ($params as $key => $param) {
-            if (empty($param)) {
-                continue;
+
+        $commandFlatten = array_map(function ($key, $param) {
+            if ($param !== '') {
+                return "--{$key}=\"{$param}\" ";
             }
-            $command .= "--{$key}=\"{$param}\" ";
-        }
-        return $command;
+        }, array_keys($params), $params);
+
+        return $command . implode(' ', $commandFlatten);
     }
 
     /**
@@ -492,6 +512,9 @@ class WPBatch
         return true;
     }
 
+    /**
+     * Changed domain
+     */
     private function domainChange()
     {
         if (!self::$connected) {
@@ -504,7 +527,7 @@ class WPBatch
     /**
      * Installs WP themes to connected WP installation
      */
-    function themesInstall()
+    private function themesInstall()
     {
         $command = self::$wpCli . " theme install " . implode(' ', array_map(function ($item) {
                 return $item['url'];
@@ -517,6 +540,9 @@ class WPBatch
         shell_exec($command);
     }
 
+    /**
+     * Themes extraction
+     */
     private function themesArchiveExtract()
     {
         $path = self::$config['themes']['source'];
@@ -527,7 +553,7 @@ class WPBatch
     /**
      * Installs WP plugins to connected WP installation
      */
-    function pluginsInstall()
+    private function pluginsInstall()
     {
         $command = self::$wpCli . " plugin install " . implode(' ', array_map(function ($item) {
                 return $item['url'];
@@ -540,6 +566,9 @@ class WPBatch
         shell_exec($command);
     }
 
+    /**
+     * Plugins extraction
+     */
     private function pluginsArchiveExtract()
     {
         $path = self::$config['plugins']['source'];
@@ -547,7 +576,10 @@ class WPBatch
         shell_exec($command);
     }
 
-    function themesActivate()
+    /**
+     * Themes activation
+     */
+    private function themesActivate()
     {
         $themeActive = array_filter(self::$config['themes'], function ($item) {
             return $item['active'] == "true";
@@ -557,7 +589,10 @@ class WPBatch
         shell_exec($command);
     }
 
-    function pluginsActivate()
+    /**
+     * Plugin activation
+     */
+    private function pluginsActivate()
     {
         $pluginActive = array_filter(self::$config['plugins'], function ($item) {
             return $item['active'] == "true";
@@ -569,6 +604,9 @@ class WPBatch
         }
     }
 
+    /**
+     * Plugin activation
+     */
     private function mediaArchiveExtract()
     {
         $path = self::$config['media']['source'];
@@ -760,6 +798,9 @@ class WPBatch
         return $res ? true : false;
     }
 
+    /**
+     * Archived media
+     */
     private function archiveMedia()
     {
         $args = [
@@ -771,6 +812,9 @@ class WPBatch
         $this->createArchive($args);
     }
 
+    /**
+     * Creates archive
+     */
     private function createArchive($args)
     {
         $defaultDir = $this->getFormatPath(BASE_PATH);
@@ -792,6 +836,9 @@ class WPBatch
         self::$config[$args['result_section']]['source'] = "{$args['name_archive_folder']}/{$args['archive_name']}";
     }
 
+    /**
+     * Archived templates
+     */
     private function archiveTemplates()
     {
         $args = [
@@ -804,6 +851,9 @@ class WPBatch
         $this->createArchive($args);
     }
 
+    /**
+     * Archived plugins
+     */
     private function archivePlugins()
     {
         $args = [

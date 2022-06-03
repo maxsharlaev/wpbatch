@@ -1,0 +1,8 @@
+{
+  "chmod": "0755",
+  "directories": ["docs"],
+  "files": ["readme.md"],
+  "main": "wpbatch.php",
+  "output": "wpbatch.phar",
+  "stub": true
+}
