@@ -67,4 +67,8 @@ Scripts are used for different batch scenarios. Mandatory scripts are:
 ```
 
 
-##Options
+##Phar compile
+
+```
+./box build -v
+```
